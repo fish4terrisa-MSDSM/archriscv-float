@@ -1,64 +1,46 @@
+# Java Gradle CircleCI 2.0 configuration file
+# See: https://circleci.com/docs/2.0/language-java/
 version: 2
-general:
-  artifacts:
 
-do_steps: &do_steps
- steps:
-  - run: echo "$CROSS_COMPILE" > ~/_cross_compile
-  - restore_cache:
-      key: code-tree-shallow-{{ .Environment.CACHE_VERSION }}
-  - run:
-      name: checkout build tree
-      command: |
-        mkdir -p ~/.ssh/
-        pacman -Syy;
-        pacman -S openssh --noconfirm;
-        pacman -S git make wget unzip zip pandoc --noconfirm
-        pacman -S jdk11-openjdk --noconfirm
-        #source /etc/profile.d/jre.sh
-        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
-        ssh-keyscan -H github.com >> ~/.ssh/known_hosts
-        git clone $CIRCLE_REPOSITORY_URL ~/project
-        if test -z "$WITHDEMO";then
-        git reset --hard $CIRCLE_SHA1
-  - run:
-      name: get sdk & ndk
-      command: |
-        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
-        #source /etc/profile.d/jre.sh
-        cd ~/project
-        ~/project/scripts/setup-android-sdk.sh
-  - run:
-      name: clean app
-      command: |
-        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
-        #source /etc/profile.d/jre.sh
-        cd ~/project
-        cp ~/project/local.properties.circleci ~/project/local.properties
-        cd ~/project/
-        JAVA_HOME=/usr/lib/jvm/java-11-openjdk/ ./gradlew clean
-  - run:
-      name: build apk-release app
-      command: |
-        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
-        #source /etc/profile.d/jre.sh
-        cd ~/project
-        JAVA_HOME=/usr/lib/jvm/java-11-openjdk/ ./gradlew build
-        cd ~/project/app/build/outputs/apk/release/
-        zip -r archlinux-riscv64-float.apk.zip app-release.apk
-  - store_artifacts:
-      path: ~/project/app/build/outputs/apk/release/archlinux-riscv64-float.apk.zip
-      destination: archlinux-riscv64-float.apk.zip
+# Define a job to be invoked later in a workflow.
+# See: https://circleci.com/docs/2.0/configuration-reference/#jobs
 jobs:
-  android-aarch64:
-   docker:
-     - image: archlinux:latest
-   environment:
-     CROSS_COMPILE: "aarch64-linux-android-"
-   <<: *do_steps
-workflows:
-  version: 2
   build:
-    jobs:
-     - android-aarch64
+    # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
+    # See: https://circleci.com/docs/2.0/configuration-reference/#docker-machine-macos-windows-executor
+    docker:
+      # specify the version you desire here
+      - image: circleci/openjdk:8-jdk
 
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+
+    working_directory: ~/repo
+
+    environment:
+      # Customize the JVM maximum heap limit
+      JVM_OPTS: -Xmx3200m
+      TERM: dumb
+    # Add steps to the job
+    # See: https://circleci.com/docs/2.0/configuration-reference/#steps
+    steps:
+      - checkout
+
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "build.gradle" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-dependencies-
+
+      - run: gradle dependencies
+
+      - save_cache:
+          paths:
+            - ~/.gradle
+          key: v1-dependencies-{{ checksum "build.gradle" }}
+
+      # run tests!
+      - run: gradle test
