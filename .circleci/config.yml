@@ -1,0 +1,64 @@
+version: 2
+general:
+  artifacts:
+
+do_steps: &do_steps
+ steps:
+  - run: echo "$CROSS_COMPILE" > ~/_cross_compile
+  - restore_cache:
+      key: code-tree-shallow-{{ .Environment.CACHE_VERSION }}
+  - run:
+      name: checkout build tree
+      command: |
+        mkdir -p ~/.ssh/
+        pacman -Syy;
+        pacman -S openssh --noconfirm;
+        pacman -S git make wget unzip zip pandoc --noconfirm
+        pacman -S jdk11-openjdk --noconfirm
+        #source /etc/profile.d/jre.sh
+        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
+        ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+        git clone $CIRCLE_REPOSITORY_URL ~/project
+        if test -z "$WITHDEMO";then
+        git reset --hard $CIRCLE_SHA1
+  - run:
+      name: get sdk & ndk
+      command: |
+        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
+        #source /etc/profile.d/jre.sh
+        cd ~/project
+        ~/project/scripts/setup-android-sdk.sh
+  - run:
+      name: clean app
+      command: |
+        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
+        #source /etc/profile.d/jre.sh
+        cd ~/project
+        cp ~/project/local.properties.circleci ~/project/local.properties
+        cd ~/project/
+        JAVA_HOME=/usr/lib/jvm/java-11-openjdk/ ./gradlew clean
+  - run:
+      name: build apk-release app
+      command: |
+        export JAVA_HOME=/usr/lib/jvm/java-11-openjdk/
+        #source /etc/profile.d/jre.sh
+        cd ~/project
+        JAVA_HOME=/usr/lib/jvm/java-11-openjdk/ ./gradlew build
+        cd ~/project/app/build/outputs/apk/release/
+        zip -r archlinux-riscv64-float.apk.zip app-release.apk
+  - store_artifacts:
+      path: ~/project/app/build/outputs/apk/release/archlinux-riscv64-float.apk.zip
+      destination: archlinux-riscv64-float.apk.zip
+jobs:
+  android-aarch64:
+   docker:
+     - image: archlinux:latest
+   environment:
+     CROSS_COMPILE: "aarch64-linux-android-"
+   <<: *do_steps
+workflows:
+  version: 2
+  build:
+    jobs:
+     - android-aarch64
+
